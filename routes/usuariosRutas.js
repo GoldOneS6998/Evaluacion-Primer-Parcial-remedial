@@ -2,85 +2,133 @@ import { Router } from "express";
 import { register, login } from "../db/usuariosBD.js";
 import User from "../models/usuarioModelo.js";
 import { mensajes } from "../libs/manejoErrores.js";
+import bcrypt from "bcrypt";
+import { verificarAdmin } from "../middleware/auth.js";
 
 const router = Router();
 
-// Crear nuevo usuario
+// Registro de usuarios
 router.post("/registro", async (req, res) => {
-    try {
-        const resultado = await register(req.body);
-        res.cookie('token', resultado.token).status(resultado.status).json(resultado);
-    } catch (error) {
-        res.status(500).json(mensajes(500, "Error en el registro", error));
-    }
+    const respuesta = await register(req.body);
+    res.cookie('token', respuesta.token).status(respuesta.status).json(respuesta);
 });
 
-// Autenticación de usuario
+// Inicio de sesión
 router.post("/login", async (req, res) => {
-    try {
-        const resultado = await login(req.body);
-        res.status(resultado.status).json(resultado);
-    } catch (error) {
-        res.status(500).json(mensajes(500, "Error en el inicio de sesión", error));
-    }
+    const respuesta = await login(req.body);
+    res.status(respuesta.status).json(respuesta);
 });
 
-// Cierre de sesión
-router.get("/salir", (req, res) => {
-    res.send("Sesión cerrada");
+// Ruta para salir
+router.get("/salir", async (req, res) => {
+    res.send("Estas en Salir");
 });
 
-// Obtener todos los usuarios
+// Ruta para mostrar todos los usuarios
 router.get("/usuarios", async (req, res) => {
     try {
-        const listaUsuarios = await User.find();
-        res.status(200).json(listaUsuarios);
+        const usuarios = await User.find();
+        res.status(200).json(usuarios);
     } catch (error) {
-        res.status(500).json(mensajes(500, "No se pudieron recuperar los usuarios", error));
+        res.status(500).json(mensajes(500, "Error al obtener los usuarios", error));
     }
 });
 
-// Buscar usuario por ID
+// Ruta para buscar un usuario por ID
 router.get("/usuarios/:id", async (req, res) => {
     try {
-        const usuario = await User.findById(req.params.id);
-        if (!usuario) return res.status(404).json(mensajes(404, "Usuario no encontrado"));
+        const { id } = req.params;
+        const usuario = await User.findById(id);
+
+        if (!usuario) {
+            return res.status(404).json(mensajes(404, "Usuario no encontrado"));
+        }
+
         res.status(200).json(usuario);
     } catch (error) {
-        res.status(500).json(mensajes(500, "Error al buscar usuario", error));
+        res.status(500).json(mensajes(500, "Error al buscar el usuario", error));
     }
 });
 
-// Eliminar usuario por ID
+// Ruta para borrar un usuario por ID
 router.delete("/usuarios/:id", async (req, res) => {
     try {
-        const usuarioEliminado = await User.findByIdAndDelete(req.params.id);
-        if (!usuarioEliminado) return res.status(404).json(mensajes(404, "Usuario no encontrado"));
-        res.status(200).json(mensajes(200, "Usuario eliminado con éxito"));
+        const { id } = req.params;
+        const usuario = await User.findByIdAndDelete(id);
+
+        if (!usuario) {
+            return res.status(404).json(mensajes(404, "Usuario no encontrado"));
+        }
+
+        res.status(200).json(mensajes(200, "Usuario borrado correctamente"));
     } catch (error) {
-        res.status(500).json(mensajes(500, "Error al eliminar usuario", error));
+        res.status(500).json(mensajes(500, "Error al borrar el usuario", error));
     }
 });
 
-// Modificar usuario por ID
+// Ruta para actualizar un usuario por ID
 router.put("/usuarios/:id", async (req, res) => {
     try {
-        const usuarioActualizado = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-        if (!usuarioActualizado) return res.status(404).json(mensajes(404, "Usuario no encontrado"));
-        res.status(200).json(mensajes(200, "Usuario actualizado correctamente", usuarioActualizado));
+        const { id } = req.params;
+        const datosActualizados = req.body;
+
+        const usuario = await User.findByIdAndUpdate(id, datosActualizados, {
+            new: true,
+            runValidators: true
+        });
+
+        if (!usuario) {
+            return res.status(404).json(mensajes(404, "Usuario no encontrado"));
+        }
+
+        res.status(200).json(mensajes(200, "Usuario actualizado correctamente", usuario));
     } catch (error) {
-        res.status(500).json(mensajes(500, "Error al actualizar usuario", error));
+        res.status(500).json(mensajes(500, "Error al actualizar el usuario", error));
     }
 });
 
-// Administradores (pendiente de implementación)
-router.get("/administradores", (req, res) => {
-    res.send("Sección de administradores");
+// Ruta para cambiar tipo de usuario (solo admin puede hacerlo)
+router.put("/cambiar-tipo-usuario/:id", verificarAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const usuario = await User.findById(id);
+
+        if (!usuario) {
+            return res.status(404).json(mensajes(404, "Usuario no encontrado"));
+        }
+
+        usuario.tipoUsuario = usuario.tipoUsuario === "admin" ? "usuario" : "admin";
+        await usuario.save();
+
+        res.status(200).json(mensajes(200, "Tipo de usuario actualizado correctamente", usuario));
+    } catch (error) {
+        res.status(500).json(mensajes(500, "Error al cambiar el tipo de usuario", error));
+    }
 });
 
-// Usuarios casuales (pendiente de implementación)
-router.get("/casuales", (req, res) => {
-    res.send("Sección de usuarios casuales");
+// Ruta para cambiar la contraseña (encriptada)
+router.put("/cambiar-password/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nuevaPassword } = req.body;
+
+        if (!nuevaPassword) {
+            return res.status(400).json(mensajes(400, "La nueva contraseña es requerida"));
+        }
+
+        const usuario = await User.findById(id);
+        if (!usuario) {
+            return res.status(404).json(mensajes(404, "Usuario no encontrado"));
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        usuario.password = await bcrypt.hash(nuevaPassword, salt);
+        await usuario.save();
+
+        res.status(200).json(mensajes(200, "Contraseña actualizada correctamente"));
+    } catch (error) {
+        res.status(500).json(mensajes(500, "Error al cambiar la contraseña", error));
+    }
 });
 
 export default router;
