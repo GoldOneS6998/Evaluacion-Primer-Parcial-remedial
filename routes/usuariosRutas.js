@@ -3,13 +3,30 @@ import { register, login } from "../db/usuariosBD.js";
 import User from "../models/usuarioModelo.js";
 import { mensajes } from "../libs/manejoErrores.js";
 import bcrypt from "bcrypt";
-import { verificarAdmin } from "../middleware/auth.js";
+import { verificarAdmin } from "../middlewares/auth.js";
 
 const router = Router();
 
 // Registro de usuarios
 router.post("/registro", async (req, res) => {
-    const respuesta = await register(req.body);
+    const { username, email, password, tipoUsuario = "usuario" } = req.body;
+
+    // Asegurarse de que el tipo de usuario sea válido
+    if (!["usuario", "admin"].includes(tipoUsuario)) {
+        return res.status(400).json(mensajes(400, "Tipo de usuario no válido"));
+    }
+
+    // Encriptación de la contraseña
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const respuesta = await register({
+        username,
+        email,
+        password: hashedPassword,  // Asegúrate de guardar la contraseña encriptada
+        tipoUsuario
+    });
+
     res.cookie('token', respuesta.token).status(respuesta.status).json(respuesta);
 });
 
@@ -88,23 +105,39 @@ router.put("/usuarios/:id", async (req, res) => {
 });
 
 // Ruta para cambiar tipo de usuario (solo admin puede hacerlo)
-router.put("/cambiar-tipo-usuario/:id", verificarAdmin, async (req, res) => {
+// Ruta para cambiar el tipo de usuario (solo admin puede hacerlo)
+router.put("/cambiar-tipo-usuario", verificarAdmin, async (req, res) => {
     try {
-        const { id } = req.params;
-        const usuario = await User.findById(id);
+        const { userId, nuevoTipoUsuario } = req.body;
+
+        // Verifica que el nuevo tipo de usuario sea válido
+        if (!["usuario", "admin"].includes(nuevoTipoUsuario)) {
+            return res.status(400).json(mensajes(400, "Tipo de usuario no válido"));
+        }
+
+        // Busca al usuario con el ID proporcionado
+        const usuario = await User.findById(userId);
 
         if (!usuario) {
             return res.status(404).json(mensajes(404, "Usuario no encontrado"));
         }
 
-        usuario.tipoUsuario = usuario.tipoUsuario === "admin" ? "usuario" : "admin";
+        // Cambia el tipo de usuario
+        usuario.tipoUsuario = nuevoTipoUsuario;
         await usuario.save();
 
-        res.status(200).json(mensajes(200, "Tipo de usuario actualizado correctamente", usuario));
+        // Responde con la confirmación de la actualización
+        res.status(200).json({
+            status: 200,
+            message: "Tipo de usuario actualizado correctamente",
+            data: usuario
+        });
+
     } catch (error) {
         res.status(500).json(mensajes(500, "Error al cambiar el tipo de usuario", error));
     }
 });
+
 
 // Ruta para cambiar la contraseña (encriptada)
 router.put("/cambiar-password/:id", async (req, res) => {
