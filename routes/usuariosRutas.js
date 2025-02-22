@@ -3,7 +3,6 @@ import { register, login } from "../db/usuariosBD.js";
 import User from "../models/usuarioModelo.js";
 import { mensajes } from "../libs/manejoErrores.js";
 import bcrypt from "bcrypt";
-import { verificarAdmin } from "../middlewares/auth.js";
 
 const router = Router();
 
@@ -104,9 +103,8 @@ router.put("/usuarios/:id", async (req, res) => {
     }
 });
 
-// Ruta para cambiar tipo de usuario (solo admin puede hacerlo)
-// Ruta para cambiar el tipo de usuario (solo admin puede hacerlo)
-router.put("/cambiar-tipo-usuario", verificarAdmin, async (req, res) => {
+// Ruta para cambiar el tipo de usuario
+router.put("/cambiar-tipo-usuario", async (req, res) => {
     try {
         const { userId, nuevoTipoUsuario } = req.body;
 
@@ -137,7 +135,6 @@ router.put("/cambiar-tipo-usuario", verificarAdmin, async (req, res) => {
         res.status(500).json(mensajes(500, "Error al cambiar el tipo de usuario", error));
     }
 });
-
 
 // Ruta para cambiar la contraseña (encriptada)
 router.put("/cambiar-password/:id", async (req, res) => {
